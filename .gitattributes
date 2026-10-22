@@ -5,6 +5,9 @@
 # Images & Graphics
 # ---------------------------------------------------------------------------
 *.png                filter=lfs diff=lfs merge=lfs -text
+# Vercel's Git checkout received LFS pointer text for these public URLs.
+# Keep browser-served app assets as ordinary Git blobs so builds need no LFS fetch.
+public/cue/*.png      -filter -diff -merge -text
 *.jpg                filter=lfs diff=lfs merge=lfs -text
 *.jpeg               filter=lfs diff=lfs merge=lfs -text
 *.gif                filter=lfs diff=lfs merge=lfs -text
