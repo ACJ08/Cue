@@ -1,15 +1,14 @@
 "use client"
 
 import { useMemo, useState, useTransition } from "react"
-import type { ProductionRun } from "@/payload-types"
+import type { ProductionRun } from "@/lib/demo-types"
 import {
   eligibleTasks,
   productName,
   progressFor,
   unmetPrerequisites,
 } from "@/lib/workflow"
-import { proposeTransition } from "./actions"
-import PendingButton from "./PendingButton"
+import { transitionRun, useDemoState } from "@/lib/demo-storage"
 
 function stateLabel(state: string) {
   return state.replaceAll("_", " ").toLowerCase()
@@ -264,7 +263,7 @@ function CueChatContent({
     setQuery(clean)
     setView({
       kind: "thinking",
-      title: "Checking live production records…",
+      title: "Checking your local demo records…",
       lines: [`Reviewing ${selectedRun.runId} tasks and dependencies.`],
     })
     startThinking(async () => {
@@ -286,7 +285,7 @@ function CueChatContent({
         <div>
           <strong>Ask CUE</strong>
           <small>
-            Uses the same live production records as your production board.
+            Uses the same browser demo data as your production board.
           </small>
         </div>
         <img src="/cue/logo.png" alt="CUE assistant" />
@@ -352,10 +351,31 @@ function CueChatContent({
 }
 
 export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
+  const { state: data } = useDemoState()
+  const [actionError, setActionError] = useState("")
+  function handleTransition(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const result = transitionRun(
+      String(form.get("runId") ?? ""),
+      String(form.get("taskKey") ?? ""),
+      String(
+        form.get("proposedState") ?? "",
+      ) as ProductionRun["tasks"][number]["state"],
+      String(form.get("reason") ?? ""),
+      String(form.get("actionType") ?? "transition"),
+    )
+    setActionError(
+      result.ok
+        ? "Review the proposal above and confirm it before the run changes."
+        : result.error,
+    )
+  }
+  const currentRuns = data.runs.length ? data.runs as ProductionRun[] : runs
   const [selected, setSelected] = useState(runs[0]?.id)
   const active = useMemo(
-    () => runs.find((run) => run.id === selected) ?? runs[0],
-    [runs, selected],
+    () => currentRuns.find((run) => run.id === selected) ?? currentRuns[0],
+    [currentRuns, selected],
   )
   if (!active) return null
 
@@ -363,7 +383,7 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
     <div className="dashboard-grid">
       <section className="run-workspace">
         <div className="run-tabs" role="tablist" aria-label="Production runs">
-          {runs.map((run) => (
+          {currentRuns.map((run) => (
             <button
               className={run.id === active.id ? "is-active" : ""}
               key={run.id}
@@ -377,6 +397,11 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
           ))}
         </div>
         <article className="run-card">
+          {actionError && (
+            <p className="form-alert" role="status">
+              {actionError}
+            </p>
+          )}
           <header>
             <div>
               <p className="card-kicker">
@@ -504,7 +529,7 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
                   <div className="task-actions">
                     {["READY", "NOT_STARTED"].includes(task.state) &&
                       unmet.length === 0 && (
-                        <form action={proposeTransition}>
+                        <form onSubmit={handleTransition}>
                           <input type="hidden" name="runId" value={active.id} />
                           <input
                             type="hidden"
@@ -516,13 +541,11 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
                             name="proposedState"
                             value="IN_PROGRESS"
                           />
-                          <PendingButton pendingLabel="Starting…">
-                            Start
-                          </PendingButton>
+                          <button type="submit">Start</button>
                         </form>
                       )}
                     {task.state === "IN_PROGRESS" && (
-                      <form action={proposeTransition}>
+                      <form onSubmit={handleTransition}>
                         <input type="hidden" name="runId" value={active.id} />
                         <input
                           type="hidden"
@@ -540,18 +563,18 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
                                 : "COMPLETED"
                           }
                         />
-                        <PendingButton pendingLabel="Preparing…">
+                        <button type="submit">
                           {task.waitingReason
                             ? "Start Waiting Stage"
                             : task.physicalCheckRequired
                               ? "Record Inspection"
                               : "Complete"}
-                        </PendingButton>
+                        </button>
                       </form>
                     )}
                     {["WAITING", "NEEDS_INSPECTION"].includes(task.state) &&
                       task.physicalCheckRequired && (
-                        <form action={proposeTransition}>
+                        <form onSubmit={handleTransition}>
                           <input type="hidden" name="runId" value={active.id} />
                           <input
                             type="hidden"
@@ -563,16 +586,16 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
                             name="proposedState"
                             value="COMPLETED"
                           />
-                          <PendingButton pendingLabel="Reviewing…">
+                          <button type="submit">
                             Confirm After Inspection
-                          </PendingButton>
+                          </button>
                         </form>
                       )}
                     {["WAITING", "NEEDS_INSPECTION"].includes(task.state) &&
                       task.physicalCheckRequired && (
                         <details className="task-more">
                           <summary>Report issue</summary>
-                          <form action={proposeTransition}>
+                          <form onSubmit={handleTransition}>
                             <input
                               type="hidden"
                               name="runId"
@@ -599,16 +622,16 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
                               placeholder="What failed inspection?"
                               required
                             />
-                            <PendingButton pendingLabel="Preparing…">
+                            <button type="submit">
                               Mark Inspection Failed
-                            </PendingButton>
+                            </button>
                           </form>
                         </details>
                       )}
                     {task.state === "COMPLETED" && (
                       <details className="task-more">
                         <summary>Correct</summary>
-                        <form action={proposeTransition}>
+                        <form onSubmit={handleTransition}>
                           <input type="hidden" name="runId" value={active.id} />
                           <input
                             type="hidden"
@@ -631,16 +654,14 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
                             placeholder="Reason for reopening"
                             required
                           />
-                          <PendingButton pendingLabel="Preparing…">
-                            Correct Record
-                          </PendingButton>
+                          <button type="submit">Correct Record</button>
                         </form>
                       </details>
                     )}
                     {task.state === "BLOCKED" && (
                       <details className="task-more">
                         <summary>Resolve</summary>
-                        <form action={proposeTransition}>
+                        <form onSubmit={handleTransition}>
                           <input type="hidden" name="runId" value={active.id} />
                           <input
                             type="hidden"
@@ -663,9 +684,7 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
                             placeholder="What resolved the blocker?"
                             required
                           />
-                          <PendingButton pendingLabel="Preparing…">
-                            Review Resolution
-                          </PendingButton>
+                          <button type="submit">Review Resolution</button>
                         </form>
                       </details>
                     )}
@@ -722,7 +741,7 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
           </div>
         </article>
       </section>
-      <CueChat runs={runs} selectedRun={active} />
+      <CueChat runs={currentRuns} selectedRun={active} />
     </div>
   )
 }

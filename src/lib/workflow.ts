@@ -1,4 +1,4 @@
-import type { ProductionRun, Product } from "@/payload-types"
+import type { ProductionRun, Product } from "@/lib/demo-types"
 
 export type TaskState = ProductionRun["tasks"][number]["state"]
 export type RunTask = ProductionRun["tasks"][number]

@@ -1,5 +1,12 @@
-import { redirect } from "next/navigation"
-
+"use client"
+import { useEffect } from "react"
 export default function AuthPage() {
-  redirect("/auth/signin")
+  useEffect(() => {
+    window.location.replace("/auth/signin")
+  }, [])
+  return (
+    <main className="auth-page">
+      <p>Opening sign in…</p>
+    </main>
+  )
 }

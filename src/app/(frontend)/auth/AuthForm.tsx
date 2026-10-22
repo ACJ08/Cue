@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
-import { signIn, signUp } from "./actions"
+import { authenticateDemo } from "@/lib/demo-storage"
 import { PasswordField } from "./AuthControls"
 
 export default function AuthForm({ mode }: { mode: "signin" | "signup" }) {
@@ -13,8 +13,11 @@ export default function AuthForm({ mode }: { mode: "signin" | "signup" }) {
   function submit(formData: FormData) {
     setError("")
     startTransition(async () => {
-      const result =
-        mode === "signin" ? await signIn(formData) : await signUp(formData)
+      const result = authenticateDemo(
+        String(formData.get("email") ?? ""),
+        String(formData.get("password") ?? ""),
+        mode === "signup" ? String(formData.get("name") ?? "") : undefined,
+      )
       if (!result.ok) {
         setError(result.error)
         return

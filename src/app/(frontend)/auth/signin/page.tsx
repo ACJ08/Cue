@@ -1,12 +1,9 @@
+"use client"
 import Link from "next/link"
-import { redirect } from "next/navigation"
-import { appAuth } from "@/lib/app-auth"
 import AuthForm from "../AuthForm"
 import DemoButton from "../DemoButton"
 
-export default async function SignInPage() {
-  if (await appAuth.currentUser()) redirect("/app")
-
+export default function SignInPage() {
   return (
     <main className="auth-page auth-page--focused">
       <Link className="auth-brand" href="/" aria-label="Back to CUE home">
@@ -20,8 +17,7 @@ export default async function SignInPage() {
           <p className="card-kicker">Welcome back</p>
           <h1>Sign in to CUE</h1>
           <p>
-            Continue with the production records connected to your baker
-            account.
+            Continue with the demo account saved in this browser.
           </p>
           <AuthForm mode="signin" />
           <p className="auth-switch">

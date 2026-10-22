@@ -7,6 +7,7 @@
       "ES2022"
     ],
     "allowJs": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
@@ -25,9 +26,6 @@
     "paths": {
       "@/*": [
         "./src/*"
-      ],
-      "@payload-config": [
-        "./src/payload.config.ts"
       ]
     },
     "target": "ES2022"
@@ -41,6 +39,7 @@
   ],
   "exclude": [
     "node_modules",
+    "legacy",
     "vite.config.*"
   ]
 }

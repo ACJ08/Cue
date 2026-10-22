@@ -1,23 +1,19 @@
-'use client'
+"use client"
 
-import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
-import { startDemo } from './actions'
+import { useRouter } from "next/navigation"
+import { useState, useTransition } from "react"
+import { startDemoWorkspace } from "@/lib/demo-storage"
 
 export default function DemoButton() {
   const router = useRouter()
-  const [error, setError] = useState('')
+  const [error, setError] = useState("")
   const [pending, startTransition] = useTransition()
 
   function openDemo() {
-    setError('')
+    setError("")
     startTransition(async () => {
-      const result = await startDemo()
-      if (!result.ok) {
-        setError(result.error)
-        return
-      }
-      router.push('/app')
+      startDemoWorkspace()
+      router.push("/app")
       router.refresh()
     })
   }
@@ -30,7 +26,7 @@ export default function DemoButton() {
         disabled={pending}
         onClick={openDemo}
       >
-        {pending ? 'Preparing your workspace…' : 'Try Baker Demo'}
+        {pending ? "Preparing your workspace…" : "Try Baker Demo"}
       </button>
       {error && <small role="alert">{error}</small>}
     </>
