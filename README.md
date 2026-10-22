@@ -134,6 +134,24 @@ Eligibility uses completed prerequisite keys and, for freezing tasks, a selected
 
 The board and chat use the same in-memory store within the page. A confirmed proposal updates the run and emits state changes, so both read the same state. Local storage restores the state after refresh in that browser profile. No multi-device or multi-user sync exists; independent tabs are not a supported shared-state service.
 
+## Cloudflare deployment and static assets
+
+The previous deployment log shows a Workers/OpenNext packaging step looking for .next/standalone/.next/server/pages-manifest.json. This repository sets output: export in next.config.ts. Next.js static export produces the out/ directory; it does not create the standalone server bundle that the OpenNext adapter expects. The local build also confirmed that the standalone manifest path is absent, while .next/server/pages-manifest.json and the static out/ tree exist. Therefore, the reported ENOENT follows from sending a static export through the OpenNext/Worker packaging workflow. The log's Next.js 16.4.0 peer warning is a second mismatch for that adapter version (its stated range starts at 16.4.1); no OpenNext dependency is needed for the selected static architecture.
+
+Use Cloudflare Pages with the Next.js Static HTML Export preset: build command pnpm run build, output directory out. Do not run pnpm opennextjs-cloudflare build or npx wrangler deploy. For direct Pages CLI deployment, run pnpm run build, then pnpm run deploy. Wrangler's committed configuration points Pages at out/ and names the project cue. The output/export model is supported by [Next.js static export](https://nextjs.org/docs/app/guides/static-exports), and Cloudflare documents the [Pages static Next.js workflow](https://developers.cloudflare.com/pages/framework-guides/nextjs/deploy-a-static-nextjs-site/). The account's current project type/name still has to be checked in Cloudflare; this workspace cannot change dashboard settings or confirm a live deployment.
+
+All five requested images are committed under public/cue/, use root-relative URLs, and were copied to out/cue/ by the production export. Wrangler Pages local preview returned image/png and status 200 for every asset; the landing, app, sign-in, and sign-up routes also returned 200. This verifies local Pages delivery, not visibility on a live deployment.
+
+| Asset | Browser path | Current use |
+| --- | --- | --- |
+| CUE logo | /cue/logo.png | Landing navigation/footer, sign-in/sign-up, app header, and chat header. |
+| CUE mascot | /cue/mascot.png | Responsive landing hero; error fallback is provided. |
+| clarifying.png | /cue/clarifying.png | Chat clarification response state. |
+| thinking.png | /cue/thinking.png | Chat processing state. |
+| success.png | /cue/success.png | Landing page workflow illustration. |
+
+No incorrect filename casing, missing source file, or route-relative asset path was found. The logo is rendered with a regular img element, so the custom Next image loader is not involved. The original missing-image report cannot be independently reproduced without a live URL/browser console; no actual deployed rendering was confirmed in this environment.
+
 ## Architecture
 
 ```mermaid
@@ -173,7 +191,7 @@ legacy/                  Archived Payload/Figma source
 ## Prerequisites and setup
 
 - Node.js 20.9 or newer.
-- pnpm 9 or 10; package metadata declares pnpm@9.10.0.
+- pnpm 10.34.3, pinned in package.json and .mise.toml.
 
 From a checkout:
 
@@ -205,9 +223,15 @@ Chat is keyword-driven, not free-form AI. Sign-up credentials are stored in plai
 | pnpm run typecheck | TypeScript check without emitting. |
 | pnpm test | Run Node's built-in test runner over tests/*.test.mjs. |
 | pnpm run build | Build the Next.js static export into out/. |
+| pnpm run preview | Serve out/ through Wrangler Pages local preview (build first). |
+| pnpm run deploy | Upload out/ as a Cloudflare Pages deployment (build first). |
 | pnpm run format | Run Oxfmt. |
 
-The repository configures static export but contains no Cloudflare Pages project configuration or deployment workflow. A static host can serve out/; the live hosting project, preview behavior, and deployment settings must be checked in the hosting account before publishing. This README does not claim a production deployment was tested.
+CUE is a static-export app: its pages use browser-side state and require no Next.js server runtime. Cloudflare Workers/OpenNext is not the deployment target. The committed wrangler.jsonc identifies a Pages project named cue and the out/ directory. Wrangler is pinned in the pnpm lockfile; there is no OpenNext adapter dependency or Worker bundle.
+
+For local verification, run pnpm run build, then pnpm run preview. For a direct upload, authenticate Wrangler with Cloudflare and run pnpm run deploy after the build. The Cloudflare Pages project slug must be cue to match wrangler.jsonc; if the existing Pages project uses another slug, update name in that file to the actual project name.
+
+For Cloudflare Pages Git integration, select the Next.js (Static HTML Export) preset, use pnpm run build as the build command, and out as the build output directory. Pages performs the deployment after building; do not configure a separate Workers deploy command. The reported npx wrangler deploy command targets Workers and triggers framework auto-configuration. Change the Cloudflare project/workflow to Pages; code changes cannot convert an existing Workers project in the dashboard. The Wrangler Pages project lookup exited abnormally in this workspace, so no live account settings or deployment could be verified.
 
 ## Tests and acceptance criteria
 
@@ -233,7 +257,7 @@ pnpm test
 pnpm run build
 ```
 
-Passing tests demonstrate code behavior, not baker usability or product outcomes.
+Passing tests demonstrate code behavior, not baker usability or product outcomes. The static Cloudflare Pages preview is served with Wrangler and has no Worker server bundle to validate.
 
 ## Limitations, risks, and next steps
 
@@ -259,4 +283,3 @@ Recommended order:
 Keep workflow enforcement deterministic and independent of conversational phrasing. A future language model should interpret requests only and must not decide eligibility or bypass transition validation. Keep physical-readiness boundaries explicit.
 
 No license file or contribution guide was found in the inspected repository. Confirm licensing and contribution terms before external reuse.
-

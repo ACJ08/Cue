@@ -4,6 +4,7 @@ out/
 dist/
 build/
 .cache/
+.wrangler/
 .env*
 next-env.d.ts
 *.tsbuildinfo
