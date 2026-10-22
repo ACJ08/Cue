@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react"
 import type { ProductionRun } from "@/lib/demo-types"
+import { buildAlexaResponse } from "@/lib/alexa"
 import {
   eligibleTasks,
   productName,
@@ -93,6 +94,17 @@ function CueChatContent({
     "What is waiting?",
     "Why is something blocked?",
   ]
+  const voiceSuggestions = [
+    "Alexa, what can I do next?",
+    "Alexa, what is waiting?",
+    "Alexa, mark the inspection complete.",
+  ]
+  const [voiceQuery, setVoiceQuery] = useState("Alexa, what can I do next?")
+  const [voiceResult, setVoiceResult] = useState<{
+    intent: string
+    response: string
+  } | null>(null)
+  const [voiceLoading, setVoiceLoading] = useState(false)
 
   function calculate(value: string): ChatView {
     const lower = value.toLowerCase()
@@ -272,6 +284,60 @@ function CueChatContent({
     })
   }
 
+  async function runAlexaCommand(value: string) {
+    const clean = value.trim()
+    setVoiceQuery(clean || voiceQuery)
+    if (!clean) {
+      setVoiceResult({
+        intent: "unknown",
+        response: "Alexa needs a question before it can route a command.",
+      })
+      return
+    }
+
+    setVoiceLoading(true)
+    setVoiceResult(null)
+
+    try {
+      const response = await fetch("/api/alexa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          command: clean,
+          text: clean,
+          deviceId: "cue-dashboard-mock-alexa",
+          runId: selectedRun.id,
+        }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data?.error || "The Alexa route was unavailable.")
+      }
+
+      const parsed = buildAlexaResponse(clean)
+      const responseText =
+        typeof data?.response === "string" && data.response.trim()
+          ? data.response
+          : parsed.response
+
+      setVoiceResult({
+        intent: typeof data?.intent === "string" ? data.intent : parsed.intent,
+        response: responseText,
+      })
+    } catch (error) {
+      setVoiceResult({
+        intent: "unknown",
+        response:
+          error instanceof Error
+            ? error.message
+            : "Alexa could not process that command.",
+      })
+    } finally {
+      setVoiceLoading(false)
+    }
+  }
+
   const stateAsset =
     view.kind === "thinking"
       ? "/cue/thinking.png"
@@ -328,11 +394,70 @@ function CueChatContent({
           </div>
         ))}
       </div>
+      <div className="cue-voice-panel" style={{ marginTop: "1rem" }}>
+        <div className="cue-chat-head" style={{ marginBottom: "0.75rem" }}>
+          <div>
+            <strong>Alexa voice assistant</strong>
+            <small>Mock voice layer connected to the Alexa command API.</small>
+          </div>
+        </div>
+        <div className="cue-suggestions">
+          {voiceSuggestions.map((suggestion) => (
+            <div key={suggestion}>
+              <span>{suggestion}</span>
+              <button
+                type="button"
+                disabled={voiceLoading}
+                onClick={() => runAlexaCommand(suggestion)}
+              >
+                Run
+              </button>
+            </div>
+          ))}
+        </div>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            runAlexaCommand(voiceQuery)
+          }}
+          style={{ marginTop: "0.75rem" }}
+        >
+          <label>
+            <span className="sr-only">Ask Alexa about production</span>
+            <input
+              value={voiceQuery}
+              onChange={(event) => setVoiceQuery(event.target.value)}
+              placeholder="Alexa, what is waiting?"
+            />
+          </label>
+          <button type="submit" disabled={voiceLoading}>
+            {voiceLoading ? "Running…" : "Run Alexa"}
+          </button>
+        </form>
+        {voiceResult && (
+          <div
+            className="cue-voice-result"
+            style={{
+              marginTop: "0.75rem",
+              padding: "0.75rem",
+              borderRadius: "0.75rem",
+              background: "rgba(124, 58, 237, 0.08)",
+              border: "1px solid rgba(124, 58, 237, 0.2)",
+            }}
+          >
+            <strong style={{ display: "block", marginBottom: "0.35rem" }}>
+              {voiceResult.intent.toUpperCase()}
+            </strong>
+            <p style={{ margin: 0 }}>{voiceResult.response}</p>
+          </div>
+        )}
+      </div>
       <form
         onSubmit={(event) => {
           event.preventDefault()
           ask(query)
         }}
+        style={{ marginTop: "1rem" }}
       >
         <label>
           <span className="sr-only">Ask CUE about production</span>
@@ -371,7 +496,7 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
         : result.error,
     )
   }
-  const currentRuns = data.runs.length ? data.runs as ProductionRun[] : runs
+  const currentRuns = data.runs.length ? (data.runs as ProductionRun[]) : runs
   const [selected, setSelected] = useState(runs[0]?.id)
   const active = useMemo(
     () => currentRuns.find((run) => run.id === selected) ?? currentRuns[0],
@@ -502,8 +627,7 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
                         <div>
                           <dt>Quality</dt>
                           <dd>
-                            {task.qualityStatus?.toLowerCase() ??
-                              "not recorded"}
+                            {task.qualityStatus?.toLowerCase() ?? "not recorded"}
                           </dd>
                         </div>
                         {task.blockedReason && (
