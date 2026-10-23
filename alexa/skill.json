@@ -1,0 +1,110 @@
+export const alexaSkillDefinition = {
+  manifest: {
+    apis: {
+      custom: {
+        endpoint: {
+          uri: "/api/alexa",
+          sslCertificateType: "Wildcard",
+        },
+      },
+    },
+    permissions: [],
+    privacyAndCompliance: {
+      locales: {
+        en-US: {
+          privacyPolicyUrl: "https://example.com/privacy",
+          termsOfUseUrl: "https://example.com/terms",
+        },
+      },
+    },
+    publishingInformation: {
+      locales: {
+        "en-US": {
+          name: "CUE Baker Assistant",
+          summary: "Production status and workflow confirmation for the bakery team.",
+          description: "Get task status, ready work, waiting work, and confirm changes for the current production run.",
+          examplePhrases: [
+            "Alexa, ask CUE what can I do next",
+            "Alexa, ask CUE what is waiting",
+            "Alexa, ask CUE mark packaging complete",
+            "Alexa, ask CUE confirm update",
+          ],
+          keywords: ["bakery", "production", "workflow", "cue"],
+          smallLogoUri: "https://example.com/logo-small.png",
+          largeLogoUri: "https://example.com/logo-large.png",
+        },
+      },
+      distributionCountries: ["US"],
+    },
+  },
+  interactions: {
+    languageModel: {
+      invocationName: "cue",
+      modelConfiguration: {
+        fallbackIntentSensitivity: {
+          level: "LOW",
+        },
+      },
+      intents: [
+        {
+          name: "GetStatus",
+          samples: [
+            "what is the status",
+            "what is my status",
+            "how is my production run",
+            "check the status",
+          ],
+        },
+        {
+          name: "GetReadyTasks",
+          samples: [
+            "what can I do next",
+            "what is ready",
+            "what work is available",
+            "what tasks are ready",
+          ],
+        },
+        {
+          name: "GetWaitingTasks",
+          samples: [
+            "what is waiting",
+            "what tasks are waiting",
+            "what is delayed",
+            "show me waiting work",
+          ],
+        },
+        {
+          name: "ProposeTaskUpdate",
+          slots: [
+            { name: "task", type: "AMAZON.Food" },
+            { name: "state", type: "AMAZON.SearchQuery" },
+          ],
+          samples: [
+            "mark {task} as {state}",
+            "set {task} to {state}",
+            "update {task} to {state}",
+            "change {task} to {state}",
+          ],
+        },
+        {
+          name: "ConfirmUpdate",
+          samples: [
+            "confirm update",
+            "please confirm",
+            "confirm it",
+          ],
+        },
+        {
+          name: "CancelUpdate",
+          samples: [
+            "cancel update",
+            "cancel that",
+            "do not confirm",
+          ],
+        },
+      ],
+    },
+  },
+}
+
+export default alexaSkillDefinition
