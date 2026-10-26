@@ -310,7 +310,7 @@ function CueChatContent({
       currentRuns.find((r) => r.id === selectedRun.id) ?? selectedRun
 
     try {
-      const response = await fetch("/api/alexa", {
+      const response = await fetch("/api/alexa/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
