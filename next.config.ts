@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
   },
   allowedDevOrigins: [],
   enablePrerenderSourceMaps: false,
+  experimental: {
+    agentUpgrade: "security",
+  },
 }
 
 export default nextConfig

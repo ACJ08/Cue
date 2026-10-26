@@ -191,7 +191,7 @@ export function confirmPendingUpdate(id: string, confirm: boolean) {
     const nextStore = {
       ...store,
       pendingActions: store.pendingActions.map((item) =>
-        item.id === id ? { ...item, status: "STALE" } : item,
+        item.id === id ? { ...item, status: "STALE" as const } : item,
       ),
     }
     saveStore(nextStore)
@@ -205,7 +205,7 @@ export function confirmPendingUpdate(id: string, confirm: boolean) {
     const nextStore = {
       ...store,
       pendingActions: store.pendingActions.map((item) =>
-        item.id === id ? { ...item, status: "CANCELLED" } : item,
+        item.id === id ? { ...item, status: "CANCELLED" as const } : item,
       ),
     }
     saveStore(nextStore)
@@ -253,9 +253,9 @@ export function confirmPendingUpdate(id: string, confirm: boolean) {
       (item.prerequisites ?? []).every((pre) => completed.has(pre.taskKey)) &&
       (item.waitingReason !== "freezing" || Boolean(run.selectedProcess))
     return item.state === "NOT_STARTED" && ready
-      ? { ...item, state: "READY" }
+      ? { ...item, state: "READY" as const }
       : item.state === "READY" && !ready
-        ? { ...item, state: "NOT_STARTED" }
+        ? { ...item, state: "NOT_STARTED" as const }
         : item
   })
 
@@ -271,7 +271,7 @@ export function confirmPendingUpdate(id: string, confirm: boolean) {
             ...item,
             tasks: refreshed,
             version: item.version + 1,
-            status: done ? "COMPLETED" : "IN_PROGRESS",
+            status: done ? ("COMPLETED" as const) : ("IN_PROGRESS" as const),
             history: [
               ...(item.history ?? []),
               {
@@ -288,7 +288,7 @@ export function confirmPendingUpdate(id: string, confirm: boolean) {
         : item,
     ),
     pendingActions: store.pendingActions.map((item) =>
-      item.id === id ? { ...item, status: "CONFIRMED" } : item,
+      item.id === id ? { ...item, status: "CONFIRMED" as const } : item,
     ),
   }
 

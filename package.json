@@ -8,25 +8,27 @@
     "build": "next build",
     "preview": "wrangler pages dev out",
     "deploy": "wrangler pages deploy out",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test": "tsx --test tests/*.test.mjs",
     "format": "oxfmt",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "better-sqlite3": "^12.0.0",
     "html-react-parser": "^5.2.10",
-    "next": "16.4.0",
+    "next": "16.4.3",
     "react": "19.2.1",
     "react-dom": "19.2.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "oxfmt": "^0.2.0",
     "postcss": "^8.5.0",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.0",
     "wrangler": "4.151.3"
   },

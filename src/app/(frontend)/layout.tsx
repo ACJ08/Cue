@@ -6,6 +6,7 @@ import {
   makeSiteSettings,
   sanitizeHtmlAttribute,
 } from "@/lib/make-site-settings"
+import AlexaAssistant from "@/components/AlexaAssistant"
 import "./styles.css"
 
 const defaultTitle = "CUE — Baking workflow assistant"
@@ -68,6 +69,7 @@ export default function RootLayout({
         <div id="root" tabIndex={-1}>
           {children}
         </div>
+        <AlexaAssistant />
         {googleAnalyticsId && (
           <>
             <Script
