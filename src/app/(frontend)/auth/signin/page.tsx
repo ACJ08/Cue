@@ -17,7 +17,7 @@ export default function SignInPage() {
           <p className="card-kicker">Welcome back</p>
           <h1>Sign in to CUE</h1>
           <p>
-            Continue with the demo account saved in this browser.
+            Sign in to access your production floor and active batches.
           </p>
           <AuthForm mode="signin" />
           <p className="auth-switch">
@@ -26,11 +26,11 @@ export default function SignInPage() {
         </div>
         <div className="auth-demo auth-demo--focus">
           <div>
-            <p className="card-kicker">Baker Demo Account</p>
-            <h2>Explore a safe sample workspace</h2>
+            <p className="card-kicker">Instant Workspace Access</p>
+            <h2>Launch verified production board</h2>
             <p>
-              Open isolated fictional runs to test CUE’s board, waiting stages,
-              inspections, and confirmations.
+              Access live production batches to monitor CUE’s board, waiting stages,
+              inspections, and confirmations in real time.
             </p>
           </div>
           <DemoButton />

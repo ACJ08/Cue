@@ -1,7 +1,10 @@
+import type { PendingAction, ProductionRun } from "@/lib/demo-types"
+
 export type CueApiRunState = {
-  runs: any[]
+  ok: boolean
+  runs: ProductionRun[]
   user: any
-  pendingActions: any[]
+  pendingActions: PendingAction[]
 }
 
 export async function fetchRuns(): Promise<CueApiRunState> {
@@ -10,6 +13,48 @@ export async function fetchRuns(): Promise<CueApiRunState> {
     throw new Error("Failed to load runs")
   }
   return response.json() as Promise<CueApiRunState>
+}
+
+export async function fetchRunById(runId: string): Promise<{ ok: boolean; run: ProductionRun }> {
+  const response = await fetch(`/api/runs/${runId}/`, { cache: "no-store" })
+  const json = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(json.error ?? "Failed to load run")
+  }
+  return json
+}
+
+export async function fetchRunStatus(runId: string) {
+  const response = await fetch(`/api/runs/${runId}/status/`, { cache: "no-store" })
+  const json = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(json.error ?? "Failed to load run status")
+  }
+  return json
+}
+
+export async function createRunApi(productId: string, options?: { quantity?: number; runType?: string }) {
+  const response = await fetch("/api/runs/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ productId, ...options }),
+  })
+  const json = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(json.error ?? "Failed to create run")
+  }
+  return json as { ok: boolean; run: ProductionRun }
+}
+
+export async function deleteRunApi(runId: string) {
+  const response = await fetch(`/api/runs/${runId}/`, {
+    method: "DELETE",
+  })
+  const json = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(json.error ?? "Failed to delete run")
+  }
+  return json
 }
 
 export async function proposeTaskUpdate(

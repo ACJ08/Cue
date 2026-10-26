@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import Database from "better-sqlite3"
-import { createInitialDemoState } from "./demo-data"
+import { createInitialDemoState, demoProducts } from "./demo-data"
 import type { DemoState } from "./demo-data"
 import type { PendingAction, ProductionRun } from "./demo-types"
 import { validateTransition } from "./workflow"
@@ -343,4 +343,71 @@ export function resetStoreToDemo() {
   const seeded = defaultStore()
   saveStore(seeded)
   return seeded
+}
+
+export function createRun(
+  productId: string,
+  options?: { quantity?: number; runType?: "customer-order" | "planned-production"; owner?: string },
+): ProductionRun | null {
+  const product = demoProducts.find(
+    (item) => item.id === productId || item.slug === productId || item.name.toLowerCase() === productId.toLowerCase(),
+  )
+  if (!product) return null
+
+  const id = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  const runCode = `CUE-${id.slice(-6).toUpperCase()}`
+  const now = new Date().toISOString()
+
+  const tasks: ProductionRun["tasks"] = product.taskDefinitions.map((definition) => ({
+    taskKey: definition.key,
+    name: definition.name,
+    sequence: definition.sequence,
+    category: definition.category,
+    prerequisites: definition.prerequisites ?? [],
+    allowsParallel: definition.allowsParallel ?? false,
+    waitingReason: definition.waitingReason ?? undefined,
+    expectedMinutes: definition.expectedMinutes ?? undefined,
+    physicalCheckRequired: definition.physicalCheckRequired ?? false,
+    mandatory: definition.mandatory ?? true,
+    state: definition.sequence === 1 ? ("READY" as const) : ("NOT_STARTED" as const),
+  }))
+
+  const store = getStore()
+  const newRun: ProductionRun = {
+    id,
+    owner: options?.owner ?? store.user?.id ?? "baker",
+    runId: runCode,
+    product,
+    runType: options?.runType ?? "planned-production",
+    quantity: options?.quantity ?? 12,
+    status: "IN_PROGRESS" as const,
+    version: 1,
+    tasks,
+    history: [],
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  const nextStore = {
+    ...store,
+    runs: [...store.runs, newRun],
+  }
+  saveStore(nextStore)
+  return newRun
+}
+
+export function deleteRun(runId: string): boolean {
+  const store = getStore()
+  const target = store.runs.find(
+    (r) => r.id === runId || r.runId.toLowerCase() === runId.toLowerCase(),
+  )
+  if (!target) return false
+
+  const nextStore = {
+    ...store,
+    runs: store.runs.filter((r) => r.id !== target.id),
+    pendingActions: store.pendingActions.filter((p) => p.productionRun !== target.id),
+  }
+  saveStore(nextStore)
+  return true
 }

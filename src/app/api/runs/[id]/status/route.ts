@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getRunById } from "@/lib/backend-store"
+import { getRunById, getStatusSummary } from "@/lib/backend-store"
 
 export async function GET(
   _request: Request,
@@ -10,5 +10,11 @@ export async function GET(
   if (!run) {
     return NextResponse.json({ ok: false, error: "Run not found" }, { status: 404 })
   }
-  return NextResponse.json({ ok: true, run })
+  return NextResponse.json({
+    ok: true,
+    runId: run.runId,
+    status: run.status,
+    summary: getStatusSummary(run),
+    tasks: run.tasks,
+  })
 }

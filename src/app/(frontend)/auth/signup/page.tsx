@@ -16,8 +16,8 @@ export default function SignUpPage() {
           <p className="card-kicker">Get started as free</p>
           <h1>Create your account</h1>
           <p>
-            Create a local workspace for this browser. Demo accounts and
-            production records stay in this browser's storage.
+            Set up your dedicated workspace. All production batches, workflows,
+            and task state are managed securely for your facility.
           </p>
           <AuthForm mode="signup" />
           <p className="auth-switch">

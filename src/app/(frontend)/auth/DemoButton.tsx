@@ -26,7 +26,7 @@ export default function DemoButton() {
         disabled={pending}
         onClick={openDemo}
       >
-        {pending ? "Preparing your workspace…" : "Try Baker Demo"}
+        {pending ? "Preparing your workspace…" : "Launch Production Board"}
       </button>
       {error && <small role="alert">{error}</small>}
     </>

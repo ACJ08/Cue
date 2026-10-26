@@ -223,6 +223,7 @@ export async function POST(request: Request) {
       intent: result.intent,
       normalized: result.normalized,
       response: result.response,
+      speech: result.response,
       action: result.action,
       runId: result.runId ?? run?.id,
       runCode: result.run ?? run?.runId,
@@ -278,10 +279,10 @@ export async function GET() {
     sampleCommands: [
       "Alexa, what can I do next?",
       "Alexa, what is waiting?",
-      "Alexa, what is the status of DEMO-HIO?",
+      "Alexa, what is the status of CUE-001?",
       "Alexa, why is cook-main blocked?",
       "Alexa, mark the inspection complete.",
-      "Alexa, switch to DEMO-T4X.",
+      "Alexa, switch to CUE-002.",
       "Alexa, start cook-main.",
     ],
   })

@@ -11,7 +11,7 @@ import {
   signOutDemo,
   useDemoState,
 } from "@/lib/demo-storage"
-import { fetchRuns, confirmPendingUpdate } from "@/lib/cue-api"
+import { fetchRuns, confirmPendingUpdate, createRunApi } from "@/lib/cue-api"
 import DashboardClient from "./DashboardClient"
 
 export default function AppPage() {
@@ -19,7 +19,7 @@ export default function AppPage() {
   const [runs, setRuns] = useState<ProductionRun[]>([])
   const [pendingActions, setPendingActions] = useState<PendingAction[]>([])
   const [message, setMessage] = useState("")
-  const [userName, setUserName] = useState("Baker Demo")
+  const [userName, setUserName] = useState("Lead Baker")
 
   const loadData = async () => {
     try {
@@ -208,12 +208,16 @@ export default function AppPage() {
                 <button
                   className="button button--primary"
                   key={item.id}
-                  onClick={() => {
+                  onClick={async () => {
                     createRunForProduct(item.id)
-                    setMessage(`Created a run for ${item.name}.`)
+                    try {
+                      await createRunApi(item.id)
+                      await loadData()
+                    } catch {}
+                    setMessage(`Started production run for ${item.name}.`)
                   }}
                 >
-                  {item.name}
+                  Start {item.name}
                 </button>
               ))}
             </div>
@@ -223,16 +227,17 @@ export default function AppPage() {
         <div className="app-footer-actions">
           <button
             className="button button--secondary"
-            onClick={() => {
+            onClick={async () => {
               if (
-                window.confirm("Reset the demo to its original sample data?")
+                window.confirm("Restore production batches to baseline?")
               ) {
                 resetDemoState()
-                setMessage("Demo data reset to its original sample state.")
+                setMessage("Production batches restored to baseline.")
+                await loadData()
               }
             }}
           >
-            Reset demo data
+            Restore production baseline
           </button>
         </div>
       </div>

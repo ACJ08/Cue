@@ -250,7 +250,7 @@ export function parseAlexaIntent(
         "You can ask CUE about status ('What is the status?'), eligible work ('What can I do next?'), active waits ('What is waiting?'), blockers ('Why is it blocked?'), or inspection requirements.",
       cardTitle: "CUE Voice Commands",
       cardText:
-        "• What can I do next?\n• What is waiting?\n• What is the status?\n• Why is a task blocked?\n• Mark inspection complete\n• Switch to DEMO-T4X",
+        "• What can I do next?\n• What is waiting?\n• What is the status?\n• Why is a task blocked?\n• Mark inspection complete\n• Switch batch",
     }
   }
 
