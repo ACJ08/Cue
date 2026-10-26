@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: [],
   // Prerender source maps add ~100 MB per static build worker
   enablePrerenderSourceMaps: false,
+  experimental: {
+    agentUpgrade: "security",
+  },
 }
 
 export default nextConfig
