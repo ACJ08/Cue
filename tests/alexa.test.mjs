@@ -1,6 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { parseAlexaIntent, buildAlexaResponse } from "../src/lib/alexa.ts"
+import {
+  parseAlexaIntent,
+  buildAlexaResponse,
+  getDynamicSuggestions,
+} from "../src/lib/alexa.ts"
 import { createInitialDemoState } from "../src/lib/demo-data.ts"
 
 const initial = createInitialDemoState()
@@ -100,3 +104,62 @@ test("buildAlexaResponse wraps result with card details", () => {
   assert.ok(result.cardText)
   assert.equal(result.intent, "waiting")
 })
+
+test("handles conversational greetings warmly", () => {
+  const res1 = parseAlexaIntent("hi", { run: sampleRun, runs: initial.runs })
+  assert.equal(res1.intent, "greeting")
+  assert.match(res1.response, /Hi there/i)
+
+  const res2 = parseAlexaIntent("Alexa, hello", { run: sampleRun, runs: initial.runs })
+  assert.equal(res2.intent, "greeting")
+  assert.match(res2.response, /Hi there/i)
+
+  const res3 = parseAlexaIntent("thank you", { run: sampleRun, runs: initial.runs })
+  assert.equal(res3.intent, "help")
+  assert.match(res3.response, /welcome/i)
+})
+
+test("detects switch_run intent and generates switch action", () => {
+  const result = parseAlexaIntent("Alexa, switch to DEMO-AKE", {
+    run: sampleRun,
+    runs: initial.runs,
+  })
+  assert.equal(result.intent, "switch_run")
+  assert.equal(result.action?.type, "switch_run")
+  assert.equal(result.action?.runCode, "DEMO-AKE")
+  assert.match(result.response, /Switched focus to DEMO-AKE/i)
+
+  const resultProduct = parseAlexaIntent("Alexa, focus on cheesecake", {
+    run: sampleRun,
+    runs: initial.runs,
+  })
+  assert.equal(resultProduct.intent, "switch_run")
+  assert.equal(resultProduct.action?.runCode, "DEMO-AKE")
+})
+
+test("detects transition_task intent and enforces workflow validation", () => {
+  const result = parseAlexaIntent("Alexa, start prepare-main", {
+    run: sampleRun,
+    runs: initial.runs,
+  })
+  assert.equal(result.intent, "transition_task")
+  assert.ok(result.action || result.response)
+
+  // Blocked transition test: cannot start finish-run directly if prerequisites unmet
+  const blockedRun = initial.runs[1] // DEMO-OEU
+  const blockedRes = parseAlexaIntent("Alexa, start finish-run", {
+    run: blockedRun,
+    runs: initial.runs,
+  })
+  assert.equal(blockedRes.intent, "transition_task")
+  assert.match(blockedRes.response, /Cannot transition/i)
+})
+
+test("generates contextual dynamic voice suggestions based on run state", () => {
+  const suggestions = getDynamicSuggestions(sampleRun, samplePending, initial.runs)
+  assert.ok(suggestions.length > 0)
+  assert.ok(suggestions.some((s) => s.includes("confirm update")))
+  assert.ok(suggestions.some((s) => s.includes("inspection complete") || s.includes("waiting")))
+})
+
+

@@ -88,7 +88,10 @@ export async function GET() {
       "confirm_update",
       "cancel_update",
       "blocked",
+      "switch_run",
+      "transition_task",
       "help",
+      "greeting",
       "unknown",
     ],
     sampleCommands: [
@@ -97,6 +100,8 @@ export async function GET() {
       "Alexa, what is the status of DEMO-HIO?",
       "Alexa, why is cook-main blocked?",
       "Alexa, mark the inspection complete.",
+      "Alexa, switch to DEMO-T4X.",
+      "Alexa, start cook-main.",
     ],
   })
 }

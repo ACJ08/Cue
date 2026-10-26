@@ -9,6 +9,7 @@ import {
   productName,
   progressFor,
   unmetPrerequisites,
+  validateTransition,
 } from "@/lib/workflow"
 
 export type AlexaIntent =
@@ -19,14 +20,21 @@ export type AlexaIntent =
   | "confirm_update"
   | "cancel_update"
   | "blocked"
+  | "switch_run"
+  | "transition_task"
   | "help"
+  | "greeting"
   | "unknown"
 
 export type AlexaAction = {
-  type: "transition" | "confirm" | "cancel" | "inspection"
+  type: "transition" | "confirm" | "cancel" | "inspection" | "switch_run"
   taskKey?: string
   targetState?: TaskState
   runId?: string
+  runCode?: string
+  productName?: string
+  pendingActionId?: string
+  reason?: string
 }
 
 export type AlexaContext = {
@@ -49,7 +57,10 @@ export type AlexaParseResult = {
 }
 
 function normalizeText(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, " ")
+  let clean = value.trim().toLowerCase().replace(/\s+/g, " ")
+  // Clean off conversational wake-words like "Alexa, ", "Hey Alexa", "CUE, "
+  clean = clean.replace(/^(?:(?:hey\s+)?alexa[,:]?\s*|cue[,:]?\s*)/, "").trim()
+  return clean
 }
 
 function formatRecordedTime(value?: string | null) {
@@ -78,13 +89,13 @@ function formatRecordedTime(value?: string | null) {
   } UTC`
 }
 
-function findTargetRun(
+function resolveSpecificRun(
   normalized: string,
   context?: AlexaContext,
 ): ProductionRun | undefined {
   if (!context) return undefined
   const runs = context.runs ?? (context.run ? [context.run] : [])
-  if (!runs.length) return context.run
+  if (!runs.length) return undefined
 
   // 1. Check for specific runId in speech
   for (const r of runs) {
@@ -100,14 +111,28 @@ function findTargetRun(
       normalized.includes(name) ||
       (name.includes("pistachio") && normalized.includes("pistachio")) ||
       (name.includes("cheesecake") && normalized.includes("cheesecake")) ||
-      (name.includes("cookie") && normalized.includes("cookie"))
+      (name.includes("cookie") && normalized.includes("cookie")) ||
+      (name.includes("chocolate") && normalized.includes("chocolate")) ||
+      (name.includes("carrot") && normalized.includes("carrot")) ||
+      (name.includes("sourdough") && normalized.includes("sourdough"))
     ) {
       return r
     }
   }
 
-  // 3. Fallback to active run or first available
-  return context.run ?? runs[0]
+  return undefined
+}
+
+function findTargetRun(
+  normalized: string,
+  context?: AlexaContext,
+): ProductionRun | undefined {
+  const specific = resolveSpecificRun(normalized, context)
+  if (specific) return specific
+
+  // Fallback to active run or first available
+  const runs = context?.runs ?? (context?.run ? [context.run] : [])
+  return context?.run ?? runs[0]
 }
 
 function findTargetTask(
@@ -121,16 +146,25 @@ function findTargetTask(
     if (normalized.includes(keyLower) || normalized.includes(nameLower)) {
       return task
     }
+    if (nameLower.includes("ingredient") && (normalized.includes("ingredient") || normalized.includes("prep"))) {
+      return task
+    }
     if (nameLower.includes("cooling") && normalized.includes("cool")) {
       return task
     }
-    if (nameLower.includes("packaging") && normalized.includes("packaging")) {
+    if (nameLower.includes("chilling") && normalized.includes("chill")) {
       return task
     }
-    if (nameLower.includes("inspect") && normalized.includes("inspect")) {
+    if (nameLower.includes("packaging") && (normalized.includes("packaging") || normalized.includes("pack"))) {
       return task
     }
-    if (nameLower.includes("cheesecake") && normalized.includes("cheesecake")) {
+    if (nameLower.includes("cook") && (normalized.includes("cook") || normalized.includes("bake"))) {
+      return task
+    }
+    if (nameLower.includes("inspect") && (normalized.includes("inspect") || normalized.includes("quality"))) {
+      return task
+    }
+    if (nameLower.includes("finish") && normalized.includes("finish")) {
       return task
     }
   }
@@ -164,9 +198,48 @@ export function parseAlexaIntent(
   const activeRun = findTargetRun(normalized, context)
   const matchedTask = findTargetTask(normalized, activeRun)
 
-  // 1. HELP INTENT
+  // 1. GREETING & LAUNCH INTENT
   if (
-    /^(?:help|what can (?:i|you) (?:do|ask)|commands|options)\b/.test(normalized)
+    /^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|howdy|greetings|launch|open(?:\s+cue)?|start(?:\s+cue|\s+app)?$)/.test(
+      normalized,
+    ) ||
+    normalized === "hi" ||
+    normalized === "hello" ||
+    normalized === "hey"
+  ) {
+    const greetingRun = activeRun ? ` for ${activeRun.runId} (${productName(activeRun)})` : ""
+    return {
+      intent: "greeting",
+      normalized,
+      run: activeRun?.runId,
+      runId: activeRun?.id,
+      response: `Hi there! I'm Alexa, your CUE baking workflow assistant${greetingRun}. You can ask me 'What can I do next?', 'What is waiting?', or check your batch progress.`,
+      cardTitle: "Hello from Alexa + CUE",
+      cardText: "Ask CUE about run status, next eligible tasks, or waiting stages.",
+    }
+  }
+
+  // 2. COURTESY / THANKS INTENT
+  if (/^(?:thanks|thank\s+you|appreciate\s+it)\b/.test(normalized)) {
+    return {
+      intent: "help",
+      normalized,
+      run: activeRun?.runId,
+      runId: activeRun?.id,
+      response:
+        "You're very welcome! Let me know whenever you need workflow guidance or status updates on your batch.",
+      cardTitle: "You're Welcome!",
+      cardText: "Ask anytime about your baking run tasks and waiting stages.",
+    }
+  }
+
+  // 3. HELP INTENT
+  if (
+    /^(?:help|commands|options)\b/.test(normalized) ||
+    (/^(?:what can (?:i|you) (?:do|ask))\b/.test(normalized) &&
+      !normalized.includes("next") &&
+      !normalized.includes("eligible") &&
+      !normalized.includes("ready"))
   ) {
     return {
       intent: "help",
@@ -177,7 +250,45 @@ export function parseAlexaIntent(
         "You can ask CUE about status ('What is the status?'), eligible work ('What can I do next?'), active waits ('What is waiting?'), blockers ('Why is it blocked?'), or inspection requirements.",
       cardTitle: "CUE Voice Commands",
       cardText:
-        "• What can I do next?\n• What is waiting?\n• What is the status?\n• Why is a task blocked?\n• Mark inspection complete",
+        "• What can I do next?\n• What is waiting?\n• What is the status?\n• Why is a task blocked?\n• Mark inspection complete\n• Switch to DEMO-T4X",
+    }
+  }
+
+  // 4. SWITCH RUN INTENT
+  if (
+    /^(?:switch|change|go|move|focus|select|view|show)\s+(?:to\s+|run\s+|batch\s+)?([a-z0-9 -]+)$/i.test(normalized) ||
+    /^(?:switch|focus)\s+(?:run|batch)\b/i.test(normalized)
+  ) {
+    const specific = resolveSpecificRun(normalized, context)
+    const runs = context?.runs ?? (context?.run ? [context.run] : [])
+    let target = specific
+    if (!target && /next|other/i.test(normalized) && runs.length > 1) {
+      target = runs.find((r) => r.id !== activeRun?.id) ?? runs[0]
+    }
+
+    if (target) {
+      const isAlreadyActive = Boolean(context?.run && context.run.id === target.id)
+      const eligibleCount = eligibleTasks(target).length
+      const progress = progressFor(target)
+      const responseText = isAlreadyActive
+        ? `You are already focused on ${target.runId} (${productName(target)}). Progress is at ${progress}%, with ${eligibleCount} tasks eligible.`
+        : `Switched focus to ${target.runId} (${productName(target)}). Progress is at ${progress}% with ${eligibleCount} tasks eligible to work on.`
+
+      return {
+        intent: "switch_run",
+        normalized,
+        run: target.runId,
+        runId: target.id,
+        response: responseText,
+        cardTitle: `Batch Focus: ${target.runId}`,
+        cardText: `${productName(target)} • ${progress}% complete • ${eligibleCount} tasks eligible to work on.`,
+        action: {
+          type: "switch_run",
+          runId: target.id,
+          runCode: target.runId,
+          productName: productName(target),
+        },
+      }
     }
   }
 
@@ -443,6 +554,7 @@ export function parseAlexaIntent(
         action: {
           type: "cancel",
           runId: activeRun?.id,
+          pendingActionId: context.pendingAction.id,
         },
         response:
           "You can cancel the proposed update directly on the board. Cancelling leaves the production run completely unchanged.",
@@ -476,6 +588,7 @@ export function parseAlexaIntent(
           taskKey: pending.taskKey,
           targetState: pending.proposedState as TaskState,
           runId: activeRun?.id,
+          pendingActionId: pending.id,
         },
         response: responseText,
         cardTitle: "Confirm Proposed Update",
@@ -491,6 +604,69 @@ export function parseAlexaIntent(
         "Update confirmation requested. In CUE, task updates are first proposed on the production board for baker review before being written to local storage.",
       cardTitle: "Update Confirmation Guard",
       cardText: "Propose a task change on the board to review and confirm it.",
+    }
+  }
+
+  // 7. TASK TRANSITION INTENT ("Alexa, start cook-main", "Alexa, complete prepare-ingredients", "Alexa, start mixing")
+  const isStart = /^(?:start|begin|commence)\s+(?:task\s+|step\s+)?([a-z0-9 -]+)/i.test(normalized)
+  const isComplete = /^(?:complete|finish|done)\s+(?:task\s+|step\s+)?([a-z0-9 -]+)/i.test(normalized)
+  const isWait = /^(?:wait|cool|chill|freeze)\s+(?:task\s+|step\s+)?([a-z0-9 -]+)/i.test(normalized)
+
+  if (activeRun && (isStart || isComplete || isWait) && matchedTask && !context?.pendingAction) {
+    let targetState: TaskState = "IN_PROGRESS"
+    if (isComplete) targetState = "COMPLETED"
+    if (isWait) targetState = "WAITING"
+
+    const validation = validateTransition(activeRun, matchedTask.taskKey, targetState)
+    if (!validation.ok) {
+      return {
+        intent: "transition_task",
+        normalized,
+        run: activeRun.runId,
+        runId: activeRun.id,
+        taskKey: matchedTask.taskKey,
+        response: `Cannot transition ${matchedTask.name} to ${targetState.toLowerCase().replace(/_/g, " ")}. ${validation.error}`,
+        cardTitle: `Blocked Transition — ${matchedTask.name}`,
+        cardText: validation.error,
+      }
+    }
+
+    if (matchedTask.physicalCheckRequired && targetState === "COMPLETED") {
+      const responseText = `Physical inspection is required for ${matchedTask.name} before completing. I have staged an inspection sign-off. Please confirm once physically checked.`
+      return {
+        intent: "inspection",
+        normalized,
+        run: activeRun.runId,
+        runId: activeRun.id,
+        taskKey: matchedTask.taskKey,
+        response: responseText,
+        cardTitle: `Physical Inspection Required — ${matchedTask.name}`,
+        cardText: `Verify physical condition for ${matchedTask.name} before marking complete.`,
+        action: {
+          type: "inspection",
+          taskKey: matchedTask.taskKey,
+          targetState: "COMPLETED",
+          runId: activeRun.id,
+        },
+      }
+    }
+
+    const responseText = `I've prepared a proposal to move ${matchedTask.name} to ${targetState.toLowerCase().replace(/_/g, " ")}. Confirming will update the production board.`
+    return {
+      intent: "transition_task",
+      normalized,
+      run: activeRun.runId,
+      runId: activeRun.id,
+      taskKey: matchedTask.taskKey,
+      response: responseText,
+      cardTitle: `Propose Transition: ${matchedTask.name}`,
+      cardText: `Move ${matchedTask.name} to ${targetState.replace(/_/g, " ")}.`,
+      action: {
+        type: "transition",
+        taskKey: matchedTask.taskKey,
+        targetState,
+        runId: activeRun.id,
+      },
     }
   }
 
@@ -565,3 +741,68 @@ export function parseAlexaIntent(
 export function buildAlexaResponse(input: string, context?: AlexaContext) {
   return parseAlexaIntent(input, context)
 }
+
+export function getDynamicSuggestions(
+  activeRun?: ProductionRun,
+  pendingAction?: PendingAction | null,
+  allRuns?: ProductionRun[],
+): string[] {
+  const suggestions: string[] = []
+
+  // 1. Pending action
+  if (pendingAction && pendingAction.status === "PENDING") {
+    suggestions.push("Alexa, confirm update")
+    suggestions.push("Alexa, cancel update")
+  }
+
+  if (activeRun) {
+    // 2. Waiting inspection
+    const waitingInspection = activeRun.tasks.find(
+      (t) =>
+        t.state === "NEEDS_INSPECTION" ||
+        (t.state === "WAITING" && t.physicalCheckRequired),
+    )
+    if (waitingInspection) {
+      suggestions.push("Alexa, mark the inspection complete")
+    }
+
+    // 3. Blocked task
+    const blocked = activeRun.tasks.find((t) => t.state === "BLOCKED")
+    if (blocked) {
+      suggestions.push(`Alexa, why is ${blocked.taskKey} blocked?`)
+    }
+
+    // 4. Eligible tasks ready
+    const eligible = eligibleTasks(activeRun).filter((t) => t.state === "READY")
+    if (eligible.length > 0) {
+      suggestions.push("Alexa, what can I do next?")
+      suggestions.push(`Alexa, start ${eligible[0].taskKey}`)
+    } else {
+      suggestions.push("Alexa, what can I do next?")
+    }
+
+    // 5. Waiting check
+    const isWaiting = activeRun.tasks.some((t) => t.state === "WAITING")
+    if (isWaiting) {
+      suggestions.push("Alexa, what is waiting?")
+    }
+
+    // 6. Status check
+    suggestions.push(`Alexa, what is the status of ${activeRun.runId}?`)
+
+    // 7. Alternate batch
+    if (allRuns && allRuns.length > 1) {
+      const otherRun = allRuns.find((r) => r.id !== activeRun.id)
+      if (otherRun) {
+        suggestions.push(`Alexa, switch to ${otherRun.runId}`)
+      }
+    }
+  } else {
+    suggestions.push("Alexa, what can I do next?")
+    suggestions.push("Alexa, what is waiting?")
+    suggestions.push("Alexa, what is the status?")
+  }
+
+  return Array.from(new Set(suggestions)).slice(0, 5)
+}
+
