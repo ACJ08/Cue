@@ -1,4 +1,8 @@
+export const dynamic = "force-static"
+
 import { buildAlexaResponse } from "@/lib/alexa"
+import type { PendingAction, ProductionRun } from "@/lib/demo-types"
+import { createInitialDemoState } from "@/lib/demo-data"
 
 export async function POST(request: Request) {
   try {
@@ -6,20 +10,51 @@ export async function POST(request: Request) {
       command?: string
       text?: string
       runId?: string
+      run?: ProductionRun
+      runs?: ProductionRun[]
+      pendingAction?: PendingAction | null
       deviceId?: string
     }
 
-    const command = typeof body.command === "string" ? body.command : body.text ?? ""
+    const command =
+      typeof body.command === "string" ? body.command : body.text ?? ""
 
-    const result = buildAlexaResponse(command)
+    let runs = body.runs
+    if (!runs || !runs.length) {
+      const initial = createInitialDemoState()
+      runs = initial.runs
+    }
+
+    let run = body.run
+    if (!run && body.runId) {
+      run = runs.find(
+        (r) =>
+          r.id === body.runId ||
+          r.runId.toLowerCase() === body.runId?.toLowerCase(),
+      )
+    }
+    if (!run) {
+      run = runs[0]
+    }
+
+    const result = buildAlexaResponse(command, {
+      run,
+      runs,
+      pendingAction: body.pendingAction ?? null,
+    })
 
     return Response.json({
       ok: true,
       intent: result.intent,
       normalized: result.normalized,
       response: result.response,
-      runId: body.runId,
-      deviceId: body.deviceId,
+      action: result.action,
+      runId: result.runId ?? run?.id,
+      runCode: result.run ?? run?.runId,
+      taskKey: result.taskKey,
+      cardTitle: result.cardTitle,
+      cardText: result.cardText,
+      deviceId: body.deviceId ?? "alexa-client",
     })
   } catch (error) {
     return Response.json(
@@ -43,7 +78,25 @@ export async function POST(request: Request) {
 export async function GET() {
   return Response.json({
     ok: true,
-    message: "Alexa mock command API is available.",
-    intents: ["status", "next_task", "confirm_update", "inspection", "unknown"],
+    service: "CUE Alexa Voice Assistant Backend Service",
+    status: "active",
+    intents: [
+      "status",
+      "next_task",
+      "waiting",
+      "inspection",
+      "confirm_update",
+      "cancel_update",
+      "blocked",
+      "help",
+      "unknown",
+    ],
+    sampleCommands: [
+      "Alexa, what can I do next?",
+      "Alexa, what is waiting?",
+      "Alexa, what is the status of DEMO-HIO?",
+      "Alexa, why is cook-main blocked?",
+      "Alexa, mark the inspection complete.",
+    ],
   })
 }

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react"
 import type { ProductionRun } from "@/lib/demo-types"
-import { buildAlexaResponse } from "@/lib/alexa"
+import { buildAlexaResponse, type AlexaAction } from "@/lib/alexa"
 import {
   eligibleTasks,
   productName,
@@ -80,6 +80,7 @@ function CueChatContent({
   runs: ProductionRun[]
   selectedRun: ProductionRun
 }) {
+  const { state: data } = useDemoState()
   const [query, setQuery] = useState("")
   const [isThinking, startThinking] = useTransition()
   const [view, setView] = useState<ChatView>({
@@ -97,12 +98,15 @@ function CueChatContent({
   const voiceSuggestions = [
     "Alexa, what can I do next?",
     "Alexa, what is waiting?",
+    "Alexa, what is the status?",
+    "Alexa, why is it blocked?",
     "Alexa, mark the inspection complete.",
   ]
   const [voiceQuery, setVoiceQuery] = useState("Alexa, what can I do next?")
   const [voiceResult, setVoiceResult] = useState<{
     intent: string
     response: string
+    action?: AlexaAction
   } | null>(null)
   const [voiceLoading, setVoiceLoading] = useState(false)
 
@@ -298,6 +302,13 @@ function CueChatContent({
     setVoiceLoading(true)
     setVoiceResult(null)
 
+    const activePending = data.pendingActions.find(
+      (p) => p.status === "PENDING",
+    )
+    const currentRuns = data.runs.length ? (data.runs as ProductionRun[]) : runs
+    const currentRun =
+      currentRuns.find((r) => r.id === selectedRun.id) ?? selectedRun
+
     try {
       const response = await fetch("/api/alexa", {
         method: "POST",
@@ -306,32 +317,34 @@ function CueChatContent({
           command: clean,
           text: clean,
           deviceId: "cue-dashboard-mock-alexa",
-          runId: selectedRun.id,
+          runId: currentRun.id,
+          run: currentRun,
+          runs: currentRuns,
+          pendingAction: activePending ?? null,
         }),
       })
 
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data?.error || "The Alexa route was unavailable.")
+      const resData = await response.json()
+      if (!response.ok || !resData.ok) {
+        throw new Error(resData?.error || "The Alexa route was unavailable.")
       }
 
-      const parsed = buildAlexaResponse(clean)
-      const responseText =
-        typeof data?.response === "string" && data.response.trim()
-          ? data.response
-          : parsed.response
-
       setVoiceResult({
-        intent: typeof data?.intent === "string" ? data.intent : parsed.intent,
-        response: responseText,
+        intent: resData.intent ?? "unknown",
+        response: resData.response,
+        action: resData.action,
       })
-    } catch (error) {
+    } catch {
+      // Graceful fallback to client-side Alexa engine
+      const parsed = buildAlexaResponse(clean, {
+        run: currentRun,
+        runs: currentRuns,
+        pendingAction: activePending ?? null,
+      })
       setVoiceResult({
-        intent: "unknown",
-        response:
-          error instanceof Error
-            ? error.message
-            : "Alexa could not process that command.",
+        intent: parsed.intent,
+        response: parsed.response,
+        action: parsed.action,
       })
     } finally {
       setVoiceLoading(false)
@@ -439,16 +452,67 @@ function CueChatContent({
             className="cue-voice-result"
             style={{
               marginTop: "0.75rem",
-              padding: "0.75rem",
+              padding: "0.85rem",
               borderRadius: "0.75rem",
               background: "rgba(124, 58, 237, 0.08)",
               border: "1px solid rgba(124, 58, 237, 0.2)",
             }}
           >
-            <strong style={{ display: "block", marginBottom: "0.35rem" }}>
-              {voiceResult.intent.toUpperCase()}
-            </strong>
-            <p style={{ margin: 0 }}>{voiceResult.response}</p>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "0.35rem",
+              }}
+            >
+              <strong
+                style={{
+                  fontSize: "0.75rem",
+                  letterSpacing: "0.05em",
+                  color: "#6d28d9",
+                  textTransform: "uppercase",
+                }}
+              >
+                {voiceResult.intent.replace(/_/g, " ")}
+              </strong>
+              <small style={{ fontSize: "0.7rem", color: "#6b7280" }}>
+                Alexa Assistant
+              </small>
+            </div>
+            <p style={{ margin: 0, fontSize: "0.875rem", lineHeight: "1.4" }}>
+              {voiceResult.response}
+            </p>
+            {voiceResult.action?.taskKey && (
+              <div style={{ marginTop: "0.5rem" }}>
+                <a
+                  href={`#task-${voiceResult.action.taskKey}`}
+                  className="button button--secondary"
+                  style={{
+                    fontSize: "0.75rem",
+                    padding: "0.25rem 0.5rem",
+                    display: "inline-block",
+                  }}
+                >
+                  Locate Task on Board
+                </a>
+              </div>
+            )}
+            {voiceResult.action?.type === "confirm" && (
+              <div style={{ marginTop: "0.5rem" }}>
+                <a
+                  href="#confirm-title"
+                  className="button button--primary"
+                  style={{
+                    fontSize: "0.75rem",
+                    padding: "0.25rem 0.5rem",
+                    display: "inline-block",
+                  }}
+                >
+                  Review Pending Confirmation
+                </a>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -570,7 +634,11 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
             {active.tasks.map((task) => {
               const unmet = unmetPrerequisites(task, active.tasks)
               return (
-                <div className="task-row" key={task.taskKey}>
+                <div
+                  className="task-row"
+                  key={task.taskKey}
+                  id={`task-${task.taskKey}`}
+                >
                   <span
                     className={`state-dot state-${task.state.toLowerCase()}`}
                   />
