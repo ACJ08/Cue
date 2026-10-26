@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState, useEffect } from "react"
-import type { ProductionRun } from "@/lib/demo-types"
+import type { PendingAction, ProductionRun } from "@/lib/demo-types"
 import {
   eligibleTasks,
   productName,
@@ -9,6 +9,7 @@ import {
   unmetPrerequisites,
 } from "@/lib/workflow"
 import { transitionRun, useDemoState } from "@/lib/demo-storage"
+import { proposeTaskUpdate } from "@/lib/cue-api"
 
 function stateLabel(state: string) {
   return state.replaceAll("_", " ").toLowerCase()
@@ -40,29 +41,19 @@ function formatRecordedTime(value?: string | null) {
   } UTC`
 }
 
-export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
+export default function DashboardClient({
+  runs,
+  pendingActions,
+  onRefresh,
+}: {
+  runs: ProductionRun[]
+  pendingActions?: PendingAction[]
+  onRefresh?: () => Promise<void>
+}) {
   const { state: data } = useDemoState()
+  const currentRuns = runs?.length ? runs : (data.runs as ProductionRun[])
   const [actionError, setActionError] = useState("")
-  function handleTransition(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    const result = transitionRun(
-      String(form.get("runId") ?? ""),
-      String(form.get("taskKey") ?? ""),
-      String(
-        form.get("proposedState") ?? "",
-      ) as ProductionRun["tasks"][number]["state"],
-      String(form.get("reason") ?? ""),
-      String(form.get("actionType") ?? "transition"),
-    )
-    setActionError(
-      result.ok
-        ? "Review the proposal above and confirm it before the run changes."
-        : result.error,
-    )
-  }
-  const currentRuns = data.runs.length ? (data.runs as ProductionRun[]) : runs
-  const [selected, setSelected] = useState(runs[0]?.id)
+  const [selected, setSelected] = useState(currentRuns[0]?.id ?? "")
 
   useEffect(() => {
     function handleSelectRun(e: Event) {
@@ -81,6 +72,42 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
     () => currentRuns.find((run) => run.id === selected) ?? currentRuns[0],
     [currentRuns, selected],
   )
+
+  async function handleTransition(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const runId = String(form.get("runId") ?? "")
+    const taskKey = String(form.get("taskKey") ?? "")
+    const proposedState = String(
+      form.get("proposedState") ?? "",
+    ) as ProductionRun["tasks"][number]["state"]
+    const reason = String(form.get("reason") ?? "")
+    const actionType = String(form.get("actionType") ?? "transition")
+
+    if (onRefresh) {
+      try {
+        await proposeTaskUpdate(runId, taskKey, proposedState, reason, actionType)
+        setActionError("Review the proposal above and confirm it before the run changes.")
+        await onRefresh()
+      } catch (error) {
+        setActionError((error as Error).message)
+      }
+    } else {
+      const result = transitionRun(
+        runId,
+        taskKey,
+        proposedState,
+        reason,
+        actionType,
+      )
+      setActionError(
+        result.ok
+          ? "Review the proposal above and confirm it before the run changes."
+          : result.error,
+      )
+    }
+  }
+
   if (!active) return null
 
   return (
@@ -91,34 +118,32 @@ export default function DashboardClient({ runs }: { runs: ProductionRun[] }) {
             <button
               className={run.id === active.id ? "is-active" : ""}
               key={run.id}
-              onClick={() => setSelected(run.id)}
               role="tab"
-              type="button"
+              aria-selected={run.id === active.id}
+              onClick={() => setSelected(run.id)}
             >
-              <span>{productName(run)}</span>
-              <small>{run.runId}</small>
+              <strong>{run.runId}</strong>
+              <small>{productName(run)}</small>
             </button>
           ))}
         </div>
         <article className="run-card">
+          <div className="run-card-header">
+            <div>
+              <p className="card-kicker">Production run {active.runId}</p>
+              <h2>{productName(active)}</h2>
+            </div>
+            <div className="progress-indicator">
+              <strong>{progressFor(active)}%</strong>
+              <span>completion</span>
+            </div>
+          </div>
           {actionError && (
-            <p className="form-alert" role="status">
+            <p className="operation-banner" role="status">
               {actionError}
             </p>
           )}
-          <header>
-            <div>
-              <p className="card-kicker">
-                {active.runId} · {active.runType.replace("-", " ")}
-              </p>
-              <h2>{productName(active)}</h2>
-            </div>
-            <div className="progress-ring">
-              <strong>{progressFor(active)}%</strong>
-              <span>complete</span>
-            </div>
-          </header>
-          <div className="run-summary" aria-label="Run status summary">
+          <div className="stats-row">
             <span>
               <strong>{eligibleTasks(active).length}</strong> eligible now
             </span>

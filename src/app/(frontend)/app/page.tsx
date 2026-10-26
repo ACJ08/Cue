@@ -4,51 +4,64 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import type { PendingAction, ProductionRun } from "@/lib/demo-types"
 import { demoProducts } from "@/lib/demo-data"
-import {
-  confirmPending,
-  createRunForProduct,
-  hasActiveDemoUser,
-  resetDemoState,
-  signOutDemo,
-  useDemoState,
-} from "@/lib/demo-storage"
+import { fetchRuns, proposeTaskUpdate, confirmPendingUpdate } from "@/lib/cue-api"
 import DashboardClient from "./DashboardClient"
 
 export default function AppPage() {
-  const { state: data, ready } = useDemoState()
+  const [runs, setRuns] = useState<ProductionRun[]>([])
+  const [pendingActions, setPendingActions] = useState<PendingAction[]>([])
   const [message, setMessage] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [userName, setUserName] = useState("Baker Demo")
+
+  const loadData = async () => {
+    try {
+      const payload = await fetchRuns()
+      setRuns(payload.runs)
+      setPendingActions(payload.pendingActions ?? [])
+      setUserName(payload.user?.name ?? "Baker Demo")
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    if (ready && !hasActiveDemoUser()) window.location.replace("/auth/signin")
-  }, [ready, data.user])
-  if (!ready || !data.user)
+    void loadData()
+  }, [])
+
+  const pending = pendingActions.find((item) => item.status === "PENDING")
+  const runId = pending?.productionRun
+  const run = runs.find((item) => item.id === runId)
+  const task = run?.tasks.find((item) => item.taskKey === pending?.taskKey)
+  const product = run && typeof run.product === "object" ? run.product : undefined
+
+  async function resolve(confirmed: boolean) {
+    if (!pending || !run) return
+    try {
+      const result = await confirmPendingUpdate(run.id, pending.id, confirmed)
+      setMessage(
+        result.ok
+          ? confirmed
+            ? `Update confirmed: ${task?.name ?? "task"}.`
+            : "Update cancelled. No production task changed."
+          : (result as any).error ?? "Unable to finish the update.",
+      )
+      await loadData()
+    } catch (error) {
+      setMessage((error as Error).message)
+    }
+  }
+
+  if (loading) {
     return (
       <main className="app-page">
         <p>Opening your CUE workspace…</p>
       </main>
     )
-  const pending = data.pendingActions.find(
-    (item) => item.status === "PENDING",
-  ) as PendingAction | undefined
-  const runId =
-    pending &&
-    (typeof pending.productionRun === "object"
-      ? pending.productionRun.id
-      : pending.productionRun)
-  const run = data.runs.find((item) => item.id === runId)
-  const task = run?.tasks.find((item) => item.taskKey === pending?.taskKey)
-  const product =
-    run && typeof run.product === "object" ? run.product : undefined
-  function resolve(confirmed: boolean) {
-    if (!pending) return
-    const result = confirmPending(pending.id, confirmed)
-    setMessage(
-      result.ok
-        ? confirmed
-          ? `Update confirmed: ${task?.name ?? "task"}.`
-          : "Update cancelled. No production task changed."
-        : result.error,
-    )
   }
+
   return (
     <main className="app-page">
       <header className="app-header">
@@ -57,70 +70,42 @@ export default function AppPage() {
         </Link>
         <div className="app-user">
           <span>
-            <strong>{data.user.name}</strong>
-            <small>
-              {data.user.accountType === "demo"
-                ? "Browser demo workspace"
-                : "Local demo workspace"}
-            </small>
+            <strong>{userName}</strong>
+            <small>Backend workspace</small>
           </span>
-          <button
-            className="button button--secondary"
-            onClick={() => {
-              signOutDemo()
-              window.location.assign("/")
-            }}
-          >
-            Sign out
-          </button>
         </div>
       </header>
       <div className="app-shell">
         <div className="app-title">
           <div>
-            <p className="eyebrow">
-              Production demo · Data stored in this browser
-            </p>
+            <p className="eyebrow">Production board · connected to API</p>
             <h1>Good work starts with a clear next step.</h1>
-            <p>
-              Updates are saved locally on this device and shared across the
-              production board.
-            </p>
+            <p>Updates are validated by the backend before they are applied.</p>
           </div>
           <div className="pending-count">
-            <strong>
-              {
-                data.pendingActions.filter((item) => item.status === "PENDING")
-                  .length
-              }
-            </strong>
+            <strong>{pendingActions.filter((item) => item.status === "PENDING").length}</strong>
             <span>awaiting confirmation</span>
           </div>
         </div>
+
         {message && (
           <p
-            className={
-              message.startsWith("Update confirmed")
-                ? "operation-banner operation-banner--success"
-                : "form-alert"
-            }
+            className={message.startsWith("Update confirmed") ? "operation-banner operation-banner--success" : "form-alert"}
             role="status"
           >
             {message}
           </p>
         )}
-        {pending && (
-          <section
-            className="confirmation-panel"
-            aria-labelledby="confirm-title"
-          >
+
+        {pending && run && (
+          <section className="confirmation-panel" aria-labelledby="confirm-title">
             <div>
               <p className="card-kicker">Review before changing the run</p>
               <h2 id="confirm-title">Confirm this task update?</h2>
               <dl className="confirmation-summary">
                 <div>
                   <dt>Production run</dt>
-                  <dd>{run?.runId ?? "Unavailable"}</dd>
+                  <dd>{run.runId}</dd>
                 </div>
                 <div>
                   <dt>Product</dt>
@@ -132,38 +117,23 @@ export default function AppPage() {
                 </div>
                 <div>
                   <dt>Proposed state</dt>
-                  <dd>
-                    {pending.proposedState.replaceAll("_", " ").toLowerCase()}
-                  </dd>
+                  <dd>{pending.proposedState.replaceAll("_", " ").toLowerCase()}</dd>
                 </div>
               </dl>
-              {pending.actionType === "inspection" && (
-                <p className="inspection-question">
-                  Have you physically verified the required condition for this
-                  task?
-                </p>
-              )}
             </div>
             <div className="confirmation-actions">
-              <button
-                className="button button--secondary"
-                onClick={() => resolve(false)}
-              >
+              <button className="button button--secondary" onClick={() => void resolve(false)}>
                 Cancel
               </button>
-              <button
-                className="button button--primary"
-                onClick={() => resolve(true)}
-              >
-                {pending.actionType === "inspection"
-                  ? "Confirm After Inspection"
-                  : "Confirm Update"}
+              <button className="button button--primary" onClick={() => void resolve(true)}>
+                Confirm Update
               </button>
             </div>
           </section>
         )}
-        {data.runs.length ? (
-          <DashboardClient runs={data.runs as ProductionRun[]} />
+
+        {runs.length ? (
+          <DashboardClient runs={runs} pendingActions={pendingActions} onRefresh={loadData} />
         ) : (
           <section className="empty-board">
             <span className="cue-avatar">C</span>
@@ -171,32 +141,19 @@ export default function AppPage() {
             <p>Choose a product to create your first independent run.</p>
             <div>
               {demoProducts.map((item) => (
-                <button
-                  className="button button--primary"
-                  key={item.id}
-                  onClick={() => createRunForProduct(item.id)}
-                >
+                <button className="button button--primary" key={item.id} onClick={async () => {
+                  const result = await proposeTaskUpdate(item.id, item.taskDefinitions[0].key, "IN_PROGRESS")
+                  void loadData()
+                  if (result.ok) {
+                    setMessage(`Created a run for ${item.name}.`)
+                  }
+                }}>
                   {item.name}
                 </button>
               ))}
             </div>
           </section>
         )}
-        <div className="app-footer-actions">
-          <button
-            className="button button--secondary"
-            onClick={() => {
-              if (
-                window.confirm("Reset the demo to its original sample data?")
-              ) {
-                resetDemoState()
-                setMessage("Demo data reset to its original sample state.")
-              }
-            }}
-          >
-            Reset demo data
-          </button>
-        </div>
       </div>
     </main>
   )
