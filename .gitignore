@@ -23,3 +23,6 @@ logs/
 # beside it.
 /.plugins/
 /.opencode-skills/
+data/*.sqlite*
+data/store.json
+

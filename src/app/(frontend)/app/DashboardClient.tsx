@@ -84,27 +84,31 @@ export default function DashboardClient({
     const reason = String(form.get("reason") ?? "")
     const actionType = String(form.get("actionType") ?? "transition")
 
+    // 1. Immediately apply to local demo storage so UI and Alexa react instantly
+    const result = transitionRun(
+      runId,
+      taskKey,
+      proposedState,
+      reason,
+      actionType,
+    )
+    if (!result.ok) {
+      setActionError(result.error)
+      return
+    }
+
+    setActionError(
+      "Review the proposal above and confirm it before the run changes.",
+    )
+
+    // 2. Also sync to backend API in background if onRefresh is provided
     if (onRefresh) {
       try {
         await proposeTaskUpdate(runId, taskKey, proposedState, reason, actionType)
-        setActionError("Review the proposal above and confirm it before the run changes.")
         await onRefresh()
-      } catch (error) {
-        setActionError((error as Error).message)
+      } catch {
+        // Backend sync is best-effort; local state is already live
       }
-    } else {
-      const result = transitionRun(
-        runId,
-        taskKey,
-        proposedState,
-        reason,
-        actionType,
-      )
-      setActionError(
-        result.ok
-          ? "Review the proposal above and confirm it before the run changes."
-          : result.error,
-      )
     }
   }
 

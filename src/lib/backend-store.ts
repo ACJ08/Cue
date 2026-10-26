@@ -10,6 +10,7 @@ const STORE_DIR = path.join(process.cwd(), "data")
 const STORE_PATH = path.join(STORE_DIR, "cue.sqlite")
 
 let database: Database.Database | null = null
+let sqliteDisabled = false
 
 function defaultStore(): DemoState {
   const seeded = createInitialDemoState()
@@ -25,26 +26,57 @@ function defaultStore(): DemoState {
   return seeded
 }
 
+function getFallbackStore(): DemoState {
+  if ((globalThis as any).__cueStore) return (globalThis as any).__cueStore
+  const jsonPath = path.join(STORE_DIR, "store.json")
+  try {
+    if (fs.existsSync(jsonPath)) {
+      const data = JSON.parse(fs.readFileSync(jsonPath, "utf8"))
+      ;(globalThis as any).__cueStore = data
+      return data
+    }
+  } catch {}
+  const seeded = defaultStore()
+  ;(globalThis as any).__cueStore = seeded
+  return seeded
+}
+
+function saveFallbackStore(next: DemoState): DemoState {
+  ;(globalThis as any).__cueStore = next
+  const jsonPath = path.join(STORE_DIR, "store.json")
+  try {
+    fs.mkdirSync(STORE_DIR, { recursive: true })
+    fs.writeFileSync(jsonPath, JSON.stringify(next, null, 2))
+  } catch {}
+  return next
+}
+
 function ensureDatabase() {
+  if (sqliteDisabled) return null
   if (database) return database
-  fs.mkdirSync(STORE_DIR, { recursive: true })
-  database = new Database(STORE_PATH)
-  database.pragma("journal_mode = WAL")
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS app_state (
-      id TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-  `)
-  const row = database
-    .prepare("SELECT value FROM app_state WHERE id = 'cue-demo-state-v1'")
-    .get() as { value?: string } | undefined
-  if (!row) {
-    database
-      .prepare("INSERT INTO app_state (id, value) VALUES ('cue-demo-state-v1', ?) ")
-      .run(JSON.stringify(defaultStore()))
+  try {
+    fs.mkdirSync(STORE_DIR, { recursive: true })
+    database = new Database(STORE_PATH)
+    database.pragma("journal_mode = WAL")
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS app_state (
+        id TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `)
+    const row = database
+      .prepare("SELECT value FROM app_state WHERE id = 'cue-demo-state-v1'")
+      .get() as { value?: string } | undefined
+    if (!row) {
+      database
+        .prepare("INSERT INTO app_state (id, value) VALUES ('cue-demo-state-v1', ?) ")
+        .run(JSON.stringify(defaultStore()))
+    }
+    return database
+  } catch {
+    sqliteDisabled = true
+    return null
   }
-  return database
 }
 
 export function resolveStorePath() {
@@ -53,30 +85,37 @@ export function resolveStorePath() {
 
 export function getStore(): DemoState {
   const db = ensureDatabase()
-  const row = db
-    .prepare("SELECT value FROM app_state WHERE id = 'cue-demo-state-v1'")
-    .get() as { value?: string } | undefined
-  if (!row?.value) {
-    const defaultState = defaultStore()
-    db.prepare("INSERT INTO app_state (id, value) VALUES ('cue-demo-state-v1', ?) ")
-      .run(JSON.stringify(defaultState))
-    return defaultState
+  if (!db) {
+    return getFallbackStore()
   }
   try {
+    const row = db
+      .prepare("SELECT value FROM app_state WHERE id = 'cue-demo-state-v1'")
+      .get() as { value?: string } | undefined
+    if (!row?.value) {
+      const defaultState = defaultStore()
+      db.prepare("INSERT INTO app_state (id, value) VALUES ('cue-demo-state-v1', ?) ")
+        .run(JSON.stringify(defaultState))
+      return defaultState
+    }
     return JSON.parse(row.value) as DemoState
   } catch {
-    const fallback = defaultStore()
-    db.prepare("UPDATE app_state SET value = ? WHERE id = 'cue-demo-state-v1' ")
-      .run(JSON.stringify(fallback))
-    return fallback
+    return getFallbackStore()
   }
 }
 
 export function saveStore(next: DemoState) {
   const db = ensureDatabase()
-  db.prepare("UPDATE app_state SET value = ? WHERE id = 'cue-demo-state-v1' ")
-    .run(JSON.stringify(next))
-  return next
+  if (!db) {
+    return saveFallbackStore(next)
+  }
+  try {
+    db.prepare("UPDATE app_state SET value = ? WHERE id = 'cue-demo-state-v1' ")
+      .run(JSON.stringify(next))
+    return next
+  } catch {
+    return saveFallbackStore(next)
+  }
 }
 
 export function listRuns() {

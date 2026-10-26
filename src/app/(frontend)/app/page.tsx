@@ -4,26 +4,37 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import type { PendingAction, ProductionRun } from "@/lib/demo-types"
 import { demoProducts } from "@/lib/demo-data"
-import { fetchRuns, proposeTaskUpdate, confirmPendingUpdate } from "@/lib/cue-api"
+import {
+  confirmPending,
+  createRunForProduct,
+  resetDemoState,
+  signOutDemo,
+  useDemoState,
+} from "@/lib/demo-storage"
+import { fetchRuns, confirmPendingUpdate } from "@/lib/cue-api"
 import DashboardClient from "./DashboardClient"
 
 export default function AppPage() {
+  const { state: localData } = useDemoState()
   const [runs, setRuns] = useState<ProductionRun[]>([])
   const [pendingActions, setPendingActions] = useState<PendingAction[]>([])
   const [message, setMessage] = useState("")
-  const [loading, setLoading] = useState(true)
   const [userName, setUserName] = useState("Baker Demo")
 
   const loadData = async () => {
     try {
       const payload = await fetchRuns()
-      setRuns(payload.runs)
-      setPendingActions(payload.pendingActions ?? [])
-      setUserName(payload.user?.name ?? "Baker Demo")
-    } catch (error) {
-      console.error(error)
-    } finally {
-      setLoading(false)
+      if (payload?.runs?.length) {
+        setRuns(payload.runs)
+      }
+      if (Array.isArray(payload?.pendingActions)) {
+        setPendingActions(payload.pendingActions)
+      }
+      if (payload?.user?.name) {
+        setUserName(payload.user.name)
+      }
+    } catch {
+      // Graceful fallback to local demo state
     }
   }
 
@@ -31,36 +42,53 @@ export default function AppPage() {
     void loadData()
   }, [])
 
-  const pending = pendingActions.find((item) => item.status === "PENDING")
-  const runId = pending?.productionRun
-  const run = runs.find((item) => item.id === runId)
+  // Use server runs/pending if available, otherwise fallback to local demo-storage
+  const currentRuns: ProductionRun[] = runs.length
+    ? runs
+    : (localData.runs as ProductionRun[])
+
+  // Merge pending actions: local pending actions take priority if present
+  const localPending = localData.pendingActions.find(
+    (item) => item.status === "PENDING",
+  ) as PendingAction | undefined
+  const serverPending = pendingActions.find((item) => item.status === "PENDING")
+  const pending = localPending ?? serverPending
+
+  const pendingRunId =
+    pending &&
+    (typeof pending.productionRun === "object"
+      ? pending.productionRun.id
+      : pending.productionRun)
+  const run = currentRuns.find((item) => item.id === pendingRunId)
   const task = run?.tasks.find((item) => item.taskKey === pending?.taskKey)
   const product = run && typeof run.product === "object" ? run.product : undefined
 
   async function resolve(confirmed: boolean) {
-    if (!pending || !run) return
-    try {
-      const result = await confirmPendingUpdate(run.id, pending.id, confirmed)
-      setMessage(
-        result.ok
-          ? confirmed
-            ? `Update confirmed: ${task?.name ?? "task"}.`
-            : "Update cancelled. No production task changed."
-          : (result as any).error ?? "Unable to finish the update.",
-      )
-      await loadData()
-    } catch (error) {
-      setMessage((error as Error).message)
+    if (!pending) return
+    // 1. Immediately update local demo storage so UI and Alexa react in real-time
+    const localResult = confirmPending(pending.id, confirmed)
+    setMessage(
+      localResult.ok
+        ? confirmed
+          ? `Update confirmed: ${task?.name ?? "task"}.`
+          : "Update cancelled. No production task changed."
+        : localResult.error,
+    )
+
+    // 2. Sync with backend API if run is available
+    if (run) {
+      try {
+        await confirmPendingUpdate(run.id, pending.id, confirmed)
+        await loadData()
+      } catch {
+        // Backend sync is best-effort; local state is already updated
+      }
     }
   }
 
-  if (loading) {
-    return (
-      <main className="app-page">
-        <p>Opening your CUE workspace…</p>
-      </main>
-    )
-  }
+  const allPending = localPending
+    ? [localPending]
+    : pendingActions.filter((item) => item.status === "PENDING")
 
   return (
     <main className="app-page">
@@ -70,27 +98,40 @@ export default function AppPage() {
         </Link>
         <div className="app-user">
           <span>
-            <strong>{userName}</strong>
-            <small>Backend workspace</small>
+            <strong>{localData.user?.name ?? userName}</strong>
+            <small>Production workspace</small>
           </span>
+          <button
+            className="button button--secondary"
+            onClick={() => {
+              signOutDemo()
+              window.location.assign("/")
+            }}
+          >
+            Sign out
+          </button>
         </div>
       </header>
       <div className="app-shell">
         <div className="app-title">
           <div>
-            <p className="eyebrow">Production board · connected to API</p>
+            <p className="eyebrow">Production board · Connected & responsive</p>
             <h1>Good work starts with a clear next step.</h1>
-            <p>Updates are validated by the backend before they are applied.</p>
+            <p>Updates are validated in real time before they are applied.</p>
           </div>
           <div className="pending-count">
-            <strong>{pendingActions.filter((item) => item.status === "PENDING").length}</strong>
+            <strong>{allPending.length}</strong>
             <span>awaiting confirmation</span>
           </div>
         </div>
 
         {message && (
           <p
-            className={message.startsWith("Update confirmed") ? "operation-banner operation-banner--success" : "form-alert"}
+            className={
+              message.startsWith("Update confirmed")
+                ? "operation-banner operation-banner--success"
+                : "form-alert"
+            }
             role="status"
           >
             {message}
@@ -98,7 +139,10 @@ export default function AppPage() {
         )}
 
         {pending && run && (
-          <section className="confirmation-panel" aria-labelledby="confirm-title">
+          <section
+            className="confirmation-panel"
+            aria-labelledby="confirm-title"
+          >
             <div>
               <p className="card-kicker">Review before changing the run</p>
               <h2 id="confirm-title">Confirm this task update?</h2>
@@ -117,23 +161,43 @@ export default function AppPage() {
                 </div>
                 <div>
                   <dt>Proposed state</dt>
-                  <dd>{pending.proposedState.replaceAll("_", " ").toLowerCase()}</dd>
+                  <dd>
+                    {pending.proposedState.replaceAll("_", " ").toLowerCase()}
+                  </dd>
                 </div>
               </dl>
+              {pending.actionType === "inspection" && (
+                <p className="inspection-question">
+                  Have you physically verified the required condition for this
+                  task?
+                </p>
+              )}
             </div>
             <div className="confirmation-actions">
-              <button className="button button--secondary" onClick={() => void resolve(false)}>
+              <button
+                className="button button--secondary"
+                onClick={() => void resolve(false)}
+              >
                 Cancel
               </button>
-              <button className="button button--primary" onClick={() => void resolve(true)}>
-                Confirm Update
+              <button
+                className="button button--primary"
+                onClick={() => void resolve(true)}
+              >
+                {pending.actionType === "inspection"
+                  ? "Confirm After Inspection"
+                  : "Confirm Update"}
               </button>
             </div>
           </section>
         )}
 
-        {runs.length ? (
-          <DashboardClient runs={runs} pendingActions={pendingActions} onRefresh={loadData} />
+        {currentRuns.length ? (
+          <DashboardClient
+            runs={currentRuns}
+            pendingActions={allPending}
+            onRefresh={loadData}
+          />
         ) : (
           <section className="empty-board">
             <span className="cue-avatar">C</span>
@@ -141,19 +205,36 @@ export default function AppPage() {
             <p>Choose a product to create your first independent run.</p>
             <div>
               {demoProducts.map((item) => (
-                <button className="button button--primary" key={item.id} onClick={async () => {
-                  const result = await proposeTaskUpdate(item.id, item.taskDefinitions[0].key, "IN_PROGRESS")
-                  void loadData()
-                  if (result.ok) {
+                <button
+                  className="button button--primary"
+                  key={item.id}
+                  onClick={() => {
+                    createRunForProduct(item.id)
                     setMessage(`Created a run for ${item.name}.`)
-                  }
-                }}>
+                  }}
+                >
                   {item.name}
                 </button>
               ))}
             </div>
           </section>
         )}
+
+        <div className="app-footer-actions">
+          <button
+            className="button button--secondary"
+            onClick={() => {
+              if (
+                window.confirm("Reset the demo to its original sample data?")
+              ) {
+                resetDemoState()
+                setMessage("Demo data reset to its original sample state.")
+              }
+            }}
+          >
+            Reset demo data
+          </button>
+        </div>
       </div>
     </main>
   )

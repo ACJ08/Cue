@@ -5,7 +5,7 @@ export type CueApiRunState = {
 }
 
 export async function fetchRuns(): Promise<CueApiRunState> {
-  const response = await fetch("/api/runs", { cache: "no-store" })
+  const response = await fetch("/api/runs/", { cache: "no-store" })
   if (!response.ok) {
     throw new Error("Failed to load runs")
   }
@@ -19,7 +19,7 @@ export async function proposeTaskUpdate(
   reason = "",
   actionType = "transition",
 ) {
-  const response = await fetch(`/api/runs/${runId}/propose`, {
+  const response = await fetch(`/api/runs/${runId}/propose/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ taskKey, nextState, reason, actionType }),
@@ -36,7 +36,7 @@ export async function confirmPendingUpdate(
   pendingId: string,
   confirm = true,
 ) {
-  const response = await fetch(`/api/runs/${runId}/confirm`, {
+  const response = await fetch(`/api/runs/${runId}/confirm/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pendingId, confirm }),
